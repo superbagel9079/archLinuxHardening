@@ -1,7 +1,5 @@
 # Zabbix Server Deployment on Arch Linux (Apache/PHP-FPM/MariaDB)
 
----
-
 ## Part I - System Preparation & Installation
 
 We begin by installing the core components. Arch Linux splits the Zabbix stack into the server, the frontend, and the agent.
