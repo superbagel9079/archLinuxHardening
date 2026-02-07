@@ -15,15 +15,15 @@ sudo pacman -S mediawiki apache mariadb php php-fpm php-intl php-gd php-apcu
 > [!NOTE] 
 > Package Roles Explained:
 > 
-> | Package           | Purpose                                                                                                               |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `mediawiki`       | The wiki application, installed to `/usr/share/webapps/mediawiki`. Pulls in `php` as a dependency                     |
-| `apache`          | The HTTP server (called `httpd` in its service unit), serving as the backend behind an Nginx reverse proxy            |
-| `mariadb`         | The relational database storing all wiki pages, user accounts, revisions, and metadata                                |
-| `php` / `php-fpm` | The PHP interpreter and FastCGI Process Manager. Apache delegates all `.php` processing to PHP-FPM over a Unix socket |
-| `php-intl`        | The Internationalization extension — a hard requirement for MediaWiki's Unicode normalization and locale handling     |
-| `php-gd`          | Image rendering library required for thumbnail generation, captcha images, and graph rendering                        |
-| `php-apcu`        | APCu userland cache. Provides a fast in-memory object cache that MediaWiki uses to avoid redundant database queries   |
+|Package|Purpose|
+|---|---|
+|`mediawiki`|The wiki application, installed to `/usr/share/webapps/mediawiki`. Pulls in `php` as a dependency|
+|`apache`|The HTTP server (called `httpd` in its service unit), serving as the backend behind an Nginx reverse proxy|
+|`mariadb`|The relational database storing all wiki pages, user accounts, revisions, and metadata|
+|`php` / `php-fpm`|The PHP interpreter and FastCGI Process Manager. Apache delegates all `.php` processing to PHP-FPM over a Unix socket|
+|`php-intl`|The Internationalization extension — a hard requirement for MediaWiki's Unicode normalization and locale handling|
+|`php-gd`|Image rendering library required for thumbnail generation, captcha images, and graph rendering|
+|`php-apcu`|APCu userland cache. Provides a fast in-memory object cache that MediaWiki uses to avoid redundant database queries|
 
 ## Part II - Database Configuration (MariaDB)
 
