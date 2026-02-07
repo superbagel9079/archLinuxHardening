@@ -324,8 +324,8 @@ Create `/etc/httpd/conf/extra/zabbix.conf`:
     </DirectoryMatch>
 
     # --- Logging ---
-    # ErrorLog "/var/log/httpd/mediawiki_error.log"
-    # CustomLog "/var/log/httpd/mediawiki_access.log" combined
+    ErrorLog "/var/log/httpd/mediawiki_error.log"
+    CustomLog "/var/log/httpd/mediawiki_access.log" common
 </VirtualHost>
 ```
 
@@ -537,9 +537,9 @@ You should see the wiki's Main Page served over HTTPS.
 
 ## Part VIII - Log Rotation
 
-Since we defined custom `ErrorLog` and `CustomLog` directives in the Apache virtual host, we must configure logrotate to prevent unbounded disk growth.
+Since we defined custom `ErrorLog` and `CustomLog` directives in the Apache virtual host, we must configure `logrotate` to prevent unbounded disk growth.
 
-Install logrotate if not already present:
+Install `logrotate` if not already present:
 
 ```bash
 sudo pacman -S logrotate
@@ -566,5 +566,5 @@ Create `/etc/logrotate.d/httpd-mediawiki`:
 >  `logrotate` on Arch is triggered by a systemd timer (`logrotate.timer`), which is enabled by default. Verify with:
 
 ```bash
-systemctl status logrotate.timer
+sudo systemctl status logrotate.timer
 ```

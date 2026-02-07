@@ -328,8 +328,8 @@ Create `/etc/httpd/conf/extra/zabbix.conf`:
     </DirectoryMatch>
     
     # --- Logging ---
-    # ErrorLog "/var/log/httpd/zabbix_error.log"
-    # CustomLog "/var/log/httpd/zabbix_access.log" common
+    ErrorLog "/var/log/httpd/zabbix_error.log"
+    CustomLog "/var/log/httpd/zabbix_access.log" common
 
 </VirtualHost>
 ```
@@ -591,5 +591,5 @@ If you use file-based Apache logs, create `/etc/logrotate.d/httpd-zabbix`:
 > `logrotate` on Arch is triggered by a systemd timer (`logrotate.timer`), which is enabled by default. Verify with:
 
 ```bash
-systemctl status logrotate.timer
+sudo systemctl status logrotate.timer
 ```
