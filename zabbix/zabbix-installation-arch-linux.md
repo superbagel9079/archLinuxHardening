@@ -73,20 +73,21 @@ sudo mariadb-secure-installation
 
 When prompted:
 
-| Prompt                       | Answer                         |
-| ---------------------------- | ------------------------------ |
-| Set root password            | Yes — choose a strong password |
-| Remove anonymous users       | Yes                            |
-| Disallow root login remotely | Yes                            |
-| Remove test database         | Yes                            |
-| Reload privilege tables      | Yes                            |
+| Prompt                                | Recommended Response | Reason                                                                                  |
+| ------------------------------------- | -------------------- | --------------------------------------------------------------------------------------- |
+| Switch to unix_socket authentication? | `n`                  | Password authentication is sufficient for local service accounts                        |
+| Change the root password?             | `Y`                  | Set a strong password — the Zabbix installer will need it to create the database schema |
+| Remove anonymous users?               | `Y`                  | Prevents unauthenticated database access                                                |
+| Disallow root login remotely?         | `Y`                  | Root should only connect from localhost                                                 |
+| Remove test database?                 | `Y`                  | Eliminates an unnecessary attack surface                                                |
+| Reload privilege tables now?          | `Y`                  | Applies all changes immediately                                                         |
 ### B - Production Tuning and Character Set
 
 Zabbix **requires** the `utf8mb4` character set with `utf8mb4_bin` collation. This is not optional — the schema import will fail or produce corrupted data without it.
 
 Create a dedicated configuration drop-in file. Do not edit the main `my.cnf` — Arch's package manager may overwrite it on update.
 
-Create and edit `/etc/my.cnf.d/zabbix-server.cnf`:
+Create and edit `/etc/my.cnf.d/zabbix.cnf`:
 
 ```ini
 [mysqld]
@@ -271,12 +272,24 @@ LoadModule remoteip_module modules/mod_remoteip.so
 LoadModule rewrite_module modules/mod_rewrite.so
 ```
 
-|Module|Purpose|
-|---|---|
-|`mod_proxy` + `mod_proxy_fcgi`|Required to forward `.php` requests to PHP-FPM over the Unix socket|
-|`mod_remoteip`|Replaces the client IP in logs and `$_SERVER` with the real IP from `X-Forwarded-For`, since this server sits behind a reverse proxy|
-|`mod_rewrite`|URL rewriting — used by Zabbix for clean URLs|
-### B - Create the Virtual Host
+| Module                         | Purpose                                                                                                                              |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `mod_proxy` + `mod_proxy_fcgi` | Required to forward `.php` requests to PHP-FPM over the Unix socket                                                                  |
+| `mod_remoteip`                 | Replaces the client IP in logs and `$_SERVER` with the real IP from `X-Forwarded-For`, since this server sits behind a reverse proxy |
+| `mod_rewrite`                  | URL rewriting — used by Zabbix for clean URLs                                                                                        |
+
+## B - Server-Level Hardening
+
+In `/etc/httpd/conf/httpd.conf`, set:
+
+```apache
+ServerSignature Off
+ServerTokens Prod
+```
+
+These directives prevent Apache from leaking version information in error pages and HTTP response headers.
+
+### C - Create the Virtual Host
 
 Create `/etc/httpd/conf/extra/zabbix.conf`:
 
@@ -314,9 +327,9 @@ Create `/etc/httpd/conf/extra/zabbix.conf`:
         Require all denied
     </DirectoryMatch>
     
-    # Logging
-    # ErrorLog "/var/log/httpd/zabbix_error.log"
-    # CustomLog "/var/log/httpd/zabbix_access.log" common
+    # --- Logging ---
+    ErrorLog "/var/log/httpd/zabbix_error.log"
+    CustomLog "/var/log/httpd/zabbix_access.log" common
 
 </VirtualHost>
 ```
@@ -328,9 +341,9 @@ Create `/etc/httpd/conf/extra/zabbix.conf`:
 journalctl -u httpd --since today
 ```
 
-If you have a specific need for file-based logs (such as feeding them to a SIEM or log aggregator), add the directives back **and** configure `logrotate` — covered in Part VII.
+If you have a specific need for file-based logs (such as feeding them to a SIEM or log aggregator), add the directives back **and** configure `logrotate` — covered in Part X.
 
-### C - Include the Virtual Host
+### D - Include the Virtual Host
 
 Add the following line at the **bottom** of `/etc/httpd/conf/httpd.conf`:
 
@@ -338,7 +351,7 @@ Add the following line at the **bottom** of `/etc/httpd/conf/httpd.conf`:
 Include conf/extra/zabbix.conf
 ```
 
-### D - Validate and Start Apache
+### E - Validate and Start Apache
 
 Test the configuration for syntax errors before starting:
 
@@ -435,7 +448,102 @@ Start and enable:
 sudo systemctl enable --now zabbix-agent
 ```
 
-## Part VIII - Log Rotation (Optional — File-Based Logging)
+## Part VIII - Frontend Setup and Finalization
+
+### A - Nginx Reverse Proxy Prerequisites
+
+Before running the web installer, your Nginx reverse proxy must be configured to forward requests to this backend.
+
+### B - Access the Web Installer
+
+Navigate to `https://zabbix.yourdomain.com` through your reverse proxy. The Zabbix web installer will guide you through the final configuration.
+
+When prompted for database details:
+
+|Field|Value|
+|---|---|
+|Database type|MySQL|
+|Database host|localhost|
+|Database port|3306 (default)|
+|Database name|zabbix|
+|Database user|zabbix|
+|Database password|The password from Part II-C|
+
+### C - Configuration File Write
+
+The web installer will attempt to write `zabbix.conf.php` to `/usr/share/webapps/zabbix/conf/`. By default, this directory is **not writable** by the `http` user — this is correct and intentional.
+
+You have two options:
+
+**Option A - Temporarily grant write access (simpler):**
+
+```bash
+sudo chown http:http /usr/share/webapps/zabbix/conf
+```
+
+Complete the web installer, then immediately revoke:
+
+```bash
+sudo chown root:root /usr/share/webapps/zabbix/conf
+```
+
+**Option B - Manual placement (more secure):**
+
+The web installer will offer a download link for the generated file. Download it, then upload it to the server:
+
+```bash
+sudo cp zabbix.conf.php /usr/share/webapps/zabbix/conf/
+sudo chown root:root /usr/share/webapps/zabbix/conf/zabbix.conf.php
+sudo chmod 644 /usr/share/webapps/zabbix/conf/zabbix.conf.php
+```
+
+> [!NOTE] 
+> The `http` user only needs to **read** this file at runtime, not write to it. Ownership by `root` with `644` permissions is the correct final state.
+
+### D - Default Login Credentials
+
+|Field|Value|
+|---|---|
+|Username|Admin|
+|Password|zabbix|
+
+## Part XIII - Service Verification
+
+Restart all services to apply every configuration change:
+
+```bash
+sudo systemctl restart mariadb
+sudo systemctl restart php-fpm
+sudo systemctl restart httpd
+```
+
+Verify each service is running:
+
+```bash
+systemctl status mariadb --no-pager
+systemctl status php-fpm --no-pager
+systemctl status httpd --no-pager
+```
+
+All three must show `active (running)`.
+
+Test the full chain from the server itself:
+
+```bash
+curl -H "Host: zabbix.yourdomain.com" http://localhost
+```
+
+Expected output: HTML content of the Main Page (or a 301 redirect to it).
+
+Test from the outside by navigating to:
+
+```
+https://zabbix.yourdomain.com
+```
+
+You should see the Zabbix's Login Page served over HTTPS.
+
+## Part X - Log Rotation (Optional — File-Based Logging)
 
 If you chose to set `LogFileSize=0` in `zabbix_server.conf` (disabling Zabbix's internal rotation) or if you added Apache `ErrorLog`/`CustomLog` directives, you **must** configure `logrotate`.
 
@@ -483,60 +591,5 @@ If you use file-based Apache logs, create `/etc/logrotate.d/httpd-zabbix`:
 > `logrotate` on Arch is triggered by a systemd timer (`logrotate.timer`), which is enabled by default. Verify with:
 
 ```bash
-systemctl status logrotate.timer
+sudo systemctl status logrotate.timer
 ```
-
-## Part IX - Frontend Setup and Finalization
-
-### A - Access the Web Installer
-
-Navigate to `https://zabbix.yourdomain.com` through your reverse proxy. The Zabbix web installer will guide you through the final configuration.
-
-When prompted for database details:
-
-|Field|Value|
-|---|---|
-|Database type|MySQL|
-|Database host|localhost|
-|Database port|3306 (default)|
-|Database name|zabbix|
-|Database user|zabbix|
-|Database password|The password from Part II-C|
-
-### B - Configuration File Write
-
-The web installer will attempt to write `zabbix.conf.php` to `/usr/share/webapps/zabbix/conf/`. By default, this directory is **not writable** by the `http` user — this is correct and intentional.
-
-You have two options:
-
-**Option A - Temporarily grant write access (simpler):**
-
-```bash
-sudo chown http:http /usr/share/webapps/zabbix/conf
-```
-
-Complete the web installer, then immediately revoke:
-
-```bash
-sudo chown root:root /usr/share/webapps/zabbix/conf
-```
-
-**Option B - Manual placement (more secure):**
-
-The web installer will offer a download link for the generated file. Download it, then upload it to the server:
-
-```bash
-sudo cp zabbix.conf.php /usr/share/webapps/zabbix/conf/
-sudo chown root:root /usr/share/webapps/zabbix/conf/zabbix.conf.php
-sudo chmod 644 /usr/share/webapps/zabbix/conf/zabbix.conf.php
-```
-
-> [!NOTE] 
-> The `http` user only needs to **read** this file at runtime, not write to it. Ownership by `root` with `644` permissions is the correct final state.
-
-### C - Default Login Credentials
-
-|Field|Value|
-|---|---|
-|Username|Admin|
-|Password|zabbix|
