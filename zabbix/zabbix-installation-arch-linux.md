@@ -195,7 +195,6 @@ extension=sockets
 > extension=ldap
 > ```
 > 
-> This requires the `php-ldap` package: `sudo pacman -S php-ldap`
 
 **Resource limits to adjust** — find each directive and modify its value:
 
@@ -314,6 +313,10 @@ Create `/etc/httpd/conf/extra/zabbix.conf`:
     <DirectoryMatch "^/usr/share/webapps/zabbix/(conf|app|include|local)/">
         Require all denied
     </DirectoryMatch>
+    
+    # Logging
+    # ErrorLog "/var/log/httpd/zabbix_error.log"
+    # CustomLog "/var/log/httpd/zabbix_access.log" common
 
 </VirtualHost>
 ```
