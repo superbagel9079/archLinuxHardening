@@ -242,9 +242,9 @@ ls -la /run/php-fpm/php-fpm.sock
 
 You should see ownership as `http:http` with `0660` permissions.
 
-# Part IV - Apache Configuration
+## Part IV - Apache Configuration
 
-## A - Module Activation
+### A - Module Activation
 
 Edit `/etc/httpd/conf/httpd.conf`. Find and **uncomment** the following lines (remove the leading `#`):
 
@@ -270,7 +270,7 @@ LoadModule mpm_event_module modules/mod_mpm_event.so
 > [!WARNING]
 > Do **not** enable `mpm_prefork_module` alongside `mpm_event_module`. Only one MPM can be active. `mpm_event` is the correct choice when using PHP-FPM as an external process manager. Reference: [Apache HTTP Server — MPM event](https://httpd.apache.org/docs/2.4/mod/event.html).
 
-## B - Server-Level Hardening
+### B - Server-Level Hardening
 
 In `/etc/httpd/conf/httpd.conf`, set:
 

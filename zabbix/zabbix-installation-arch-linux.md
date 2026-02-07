@@ -278,7 +278,7 @@ LoadModule rewrite_module modules/mod_rewrite.so
 | `mod_remoteip`                 | Replaces the client IP in logs and `$_SERVER` with the real IP from `X-Forwarded-For`, since this server sits behind a reverse proxy |
 | `mod_rewrite`                  | URL rewriting — used by Zabbix for clean URLs                                                                                        |
 
-## B - Server-Level Hardening
+### B - Server-Level Hardening
 
 In `/etc/httpd/conf/httpd.conf`, set:
 
