@@ -63,7 +63,7 @@ The InnoDB storage engine benefits from the same tuning principles regardless of
 
 Create a dedicated configuration drop-in file. Do not edit the main `my.cnf` — Arch's package manager may overwrite it on update.
 
-Create and edit `/etc/my.cnf.d/mediawiki-server.cnf`:
+Create and edit `/etc/my.cnf.d/mediawiki.cnf`:
 
 ```ini
 [mysqld]
@@ -113,7 +113,7 @@ sudo systemctl restart mariadb
 Log in to MariaDB:
 
 ```bash
-sudo mariadb -u root -p
+mariadb -u root -p
 ```
 
 > [!WARNING] 
@@ -123,7 +123,7 @@ Execute the following. Replace `YOUR_SECURE_PASSWORD` with a strong, unique pass
 
 ```sql
 CREATE DATABASE mediawiki CHARACTER SET binary COLLATE binary;
-CREATE USER 'mediawiki'@'localhost' IDENTIFIED BY 'your_secure_password_here';
+CREATE USER 'mediawiki'@'localhost' IDENTIFIED BY 'YOUR_SECURE_PASSWORD';
 GRANT ALL PRIVILEGES ON mediawiki.* TO 'mediawiki'@'localhost';
 FLUSH PRIVILEGES;
 EXIT;
@@ -139,14 +139,22 @@ EXIT;
 Edit `/etc/php/php.ini`. Locate and uncomment (remove the leading `;`) the following lines:
 
 ```ini
+extension=bcmath
+extension=calendar
+extension=curl
+extension=gd
 extension=iconv
 extension=intl
-extension=gd
 extension=mysqli
+extension=sodium
 ```
 
 > [!NOTE] 
-> `iconv` is typically compiled in and enabled by default on Arch. Confirm by running `php -m | grep iconv`. If it appears in the output, no action is needed for that line. `mysqli` is the database driver that MediaWiki uses for all MariaDB/MySQL connections.
+> If you plan to use LDAP authentication against Active Directory or another directory, also uncomment:
+> ```ini
+> extension=ldap
+> ```
+> 
 
 **Resource limits to adjust** — find each directive and modify its value:
 
@@ -166,12 +174,6 @@ memory_limit        = 512M
 | `max_input_time`      | `60`    | `300`          | Large form submissions (bulk edits) require extended input parsing                |
 | `memory_limit`        | `128M`  | `256M`         | VisualEditor/Parsoid operations and large page transclusions are memory-intensive |
 
-Edit `/etc/php/conf.d/apcu.ini` and ensure the following line is present and uncommented:
-
-```ini
-extension=apcu.so
-```
-
 **Timezone** - this is critical.  MediaWiki uses PHP's timezone for revision timestamps, log entries, and signature formatting.
 
 ```ini
@@ -179,6 +181,12 @@ date.timezone = "UTC"
 ```
 
 Replace `UTC` with your actual timezone. The list of valid values is at [php.net/manual/en/timezones.php](https://www.php.net/manual/en/timezones.php).
+
+Edit `/etc/php/conf.d/apcu.ini` and ensure the following line is present and uncommented:
+
+```ini
+extension=apcu.so
+```
 
 ### C - Sessions
 
@@ -251,7 +259,7 @@ LoadModule rewrite_module modules/mod_rewrite.so
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `mod_proxy` + `mod_proxy_fcgi` | Required to forward `.php` requests to PHP-FPM over the Unix socket                                                                  |
 | `mod_remoteip`                 | Replaces the client IP in logs and `$_SERVER` with the real IP from `X-Forwarded-For`, since this server sits behind a reverse proxy |
-| `mod_rewrite`                  | URL rewriting — used by Zabbix for clean URLs                                                                                        |
+| `mod_rewrite`                  | URL rewriting — used by Mediawiki for clean URLs                                                                                     |
 
 Ensure the `mpm_event_module` is active (this is the default on Arch and the recommended MPM for use with PHP-FPM):
 
@@ -275,7 +283,7 @@ These directives prevent Apache from leaking version information in error pages 
 
 ### C - Create the Virtual Host
 
-Create `/etc/httpd/conf/extra/zabbix.conf`:
+Create `/etc/httpd/conf/extra/mediawiki.conf`:
 
 > [!WARNING] 
 > You **must** replace `10.X.X.X` with the actual IP address of your reverse proxy. This is the mechanism that tells Apache which source is trusted to set the `X-Forwarded-For` header. If this is wrong or missing, either all clients appear with the proxy's IP, or worse, an attacker can forge their IP.
@@ -287,6 +295,7 @@ Create `/etc/httpd/conf/extra/zabbix.conf`:
 
     # --- Reverse Proxy Trust ---
     # Only trust X-Forwarded-For from our known Nginx reverse proxy.
+    # Replace 10.X.X.X with the actual IP of your Nginx server.
     RemoteIPHeader X-Forwarded-For
     RemoteIPInternalProxy 10.X.X.X
 
@@ -303,23 +312,58 @@ Create `/etc/httpd/conf/extra/zabbix.conf`:
         SetHandler "proxy:unix:/run/php-fpm/php-fpm.sock|fcgi://localhost/"
     </FilesMatch>
 
+    # --- Upload Directory Hardening ---
+    # Disable PHP execution inside the uploads directory entirely.
+    # This prevents any uploaded file from being interpreted as PHP,
+    # even if an attacker manages to bypass extension filtering.
+    # The nosniff header instructs browsers to respect the declared
+    # Content-Type and never attempt MIME-type sniffing, which blocks
+    # a class of XSS attacks where a crafted image is rendered as HTML.
+    <Directory "/usr/share/webapps/mediawiki/images">
+        AllowOverride None
+
+        # Strip the PHP-FPM handler — no .php file in this tree will execute.
+        <FilesMatch \.php$>
+            SetHandler None
+        </FilesMatch>
+
+        # Serve any HTML-like files as plain text to prevent script execution.
+        AddType text/plain .html .htm .shtml .phtml
+
+        # Instruct browsers not to sniff MIME types.
+        Header set X-Content-Type-Options nosniff
+    </Directory>
+
     # --- Short URL Rewrites ---
     RewriteEngine On
+
+    # Let existing files and directories pass through untouched.
+    # This ensures static assets (CSS, JS, images, skins) are served directly.
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # Handle the MediaWiki REST API (required for Visual Editor, etc.)
+    RewriteRule ^/?rest\.php(/.*)?$ /rest.php [L]
 
     # Rewrite /wiki/Article_Title to index.php
     RewriteRule ^/?wiki(/.*)?$ /index.php [L]
 
-    # Redirect bare domain to the Main Page
-    RewriteRule ^/*$ /wiki/Main_Page [R=301,L]
+    # Redirect bare domain to the Main Page.
+    # Use 302 (temporary) until the configuration is confirmed stable,
+    # then change to 301 (permanent) for browser caching.
+    RewriteRule ^/*$ /wiki/Main_Page [R=302,L]
 
     # --- Deny Access to Sensitive Directories ---
-    # These directories contain PHP includes and configuration.
+    # These directories contain PHP includes, internal logic, and configuration.
     # They must NEVER be served directly to a browser.
-    <DirectoryMatch "^/usr/share/webapps/mediawiki/(cache|includes|maintenance|languages|serialized|tests|images/deleted)/">
-        Require all denied
-    </DirectoryMatch>
-
-    <DirectoryMatch "^/usr/share/webapps/mediawiki/(bin|docs|extensions|includes|maintenance|mw-config|resources|serialized|tests)/">
+    #
+    # NOTE: "mw-config" is the web installer. It is currently ALLOWED because
+    # LocalSettings.php does not yet exist. Once the installation is complete
+    # and LocalSettings.php has been placed in /etc/webapps/mediawiki/,
+    # add "mw-config" to the list below, restart httpd, and verify that
+    # accessing /mw-config/index.php returns a 403.
+    <DirectoryMatch "^/usr/share/webapps/mediawiki/(bin|cache|docs|includes|languages|maintenance|serialized|tests|images/deleted)/">
         Require all denied
     </DirectoryMatch>
 
@@ -336,14 +380,14 @@ Create `/etc/httpd/conf/extra/zabbix.conf`:
 journalctl -u httpd --since today
 ```
 
-If you have a specific need for file-based logs (such as feeding them to a SIEM or log aggregator), add the directives back **and** configure `logrotate` — covered in Part VII.
+If you have a specific need for file-based logs (such as feeding them to a SIEM or log aggregator), add the directives back **and** configure `logrotate` — covered in Part VIII.
 
 ### D - Include the Virtual Host
 
 Add the following line at the **bottom** of `/etc/httpd/conf/httpd.conf`:
 
 ```apache
-Include conf/extra/zabbix.conf
+Include conf/extra/mediawiki.conf
 ```
 
 ### E - Validate and Start Apache
@@ -388,7 +432,7 @@ At the end, the installer generates a `LocalSettings.php` file and offers it for
 Save the downloaded file to the server:
 
 ```bash
-sudo mv /path/to/downloaded/LocalSettings.php /etc/webapps/mediawiki/LocalSettings.php
+sudo mv LocalSettings.php /etc/webapps/mediawiki/LocalSettings.php
 sudo chown root:http /etc/webapps/mediawiki/LocalSettings.php
 sudo chmod 640 /etc/webapps/mediawiki/LocalSettings.php
 ```

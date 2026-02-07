@@ -73,21 +73,21 @@ sudo mariadb-secure-installation
 
 When prompted:
 
-| Prompt                                | Recommended Response | Reason                                                                                     |
-| ------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------ |
-| Switch to unix_socket authentication? | `n`                  | Password authentication is sufficient for local service accounts                           |
-| Change the root password?             | `Y`                  | Set a strong password — the MediaWiki installer will need it to create the database schema |
-| Remove anonymous users?               | `Y`                  | Prevents unauthenticated database access                                                   |
-| Disallow root login remotely?         | `Y`                  | Root should only connect from localhost                                                    |
-| Remove test database?                 | `Y`                  | Eliminates an unnecessary attack surface                                                   |
-| Reload privilege tables now?          | `Y`                  | Applies all changes immediately                                                            |
+| Prompt                                | Recommended Response | Reason                                                                                  |
+| ------------------------------------- | -------------------- | --------------------------------------------------------------------------------------- |
+| Switch to unix_socket authentication? | `n`                  | Password authentication is sufficient for local service accounts                        |
+| Change the root password?             | `Y`                  | Set a strong password — the Zabbix installer will need it to create the database schema |
+| Remove anonymous users?               | `Y`                  | Prevents unauthenticated database access                                                |
+| Disallow root login remotely?         | `Y`                  | Root should only connect from localhost                                                 |
+| Remove test database?                 | `Y`                  | Eliminates an unnecessary attack surface                                                |
+| Reload privilege tables now?          | `Y`                  | Applies all changes immediately                                                         |
 ### B - Production Tuning and Character Set
 
 Zabbix **requires** the `utf8mb4` character set with `utf8mb4_bin` collation. This is not optional — the schema import will fail or produce corrupted data without it.
 
 Create a dedicated configuration drop-in file. Do not edit the main `my.cnf` — Arch's package manager may overwrite it on update.
 
-Create and edit `/etc/my.cnf.d/zabbix-server.cnf`:
+Create and edit `/etc/my.cnf.d/zabbix.cnf`:
 
 ```ini
 [mysqld]
@@ -341,7 +341,7 @@ Create `/etc/httpd/conf/extra/zabbix.conf`:
 journalctl -u httpd --since today
 ```
 
-If you have a specific need for file-based logs (such as feeding them to a SIEM or log aggregator), add the directives back **and** configure `logrotate` — covered in Part VII.
+If you have a specific need for file-based logs (such as feeding them to a SIEM or log aggregator), add the directives back **and** configure `logrotate` — covered in Part X.
 
 ### D - Include the Virtual Host
 
