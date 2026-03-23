@@ -1,11 +1,5 @@
 #!/usr/bin/env bash
 
-# -----------------------------------------------------------------------------
-# Script: ssh-hardening-v13.sh
-# Purpose: Arch Linux SSH hardening (Production Grade)
-# Theme: Professional Monochrome (Boxed Layout + Security Context)
-# -----------------------------------------------------------------------------
-
 set -eu -o pipefail
 
 # Global State Variables (Initialized for Trap)
